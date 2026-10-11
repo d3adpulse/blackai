@@ -1,0 +1,11 @@
+fastapi>=0.110
+uvicorn>=0.27
+pydantic>=2.5
+
+# Движок ИИ (CPU). Ставится отдельно готовым wheel-ом:
+#   py -m pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu --only-binary=:all:
+llama-cpp-python>=0.3.0
+
+# Необязательно (альтернатива llama.cpp, требует ~3 ГБ):
+# torch>=2.0
+# transformers>=4.40

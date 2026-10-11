@@ -1,0 +1,67 @@
+# ================= Модели ИИ (слишком большие для GitHub) =================
+# Лимит GitHub - 100 МБ на файл. GGUF-модель занимает больше 1 ГБ.
+server/models/
+*.gguf
+*.safetensors
+*.bin
+*.pt
+
+# Обученная нейросеть (пересоздаётся скриптом train_model.py)
+server/model_mini/
+
+# ================= Корпус для обучения =================
+server/corpus_raw/
+server/wiki_raw.json
+server/corpus.txt
+
+# ================= Сборка Android =================
+app/build/
+build/
+.gradle/
+.cxx/
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Готовые APK (приложены в Releases, а не в git)
+BlackAI-1.0.apk
+BlackAI-1.0-debug.apk
+
+# ================= Локальные настройки =================
+# Содержит абсолютный путь к SDK конкретного компьютера
+local.properties
+.gradle.properties.local
+
+# ================= Ключи подписи (секреты) =================
+*.keystore
+*.jks
+*.p12
+key.properties
+
+# ================= IDE =================
+.idea/
+*.iml
+.vscode/
+*.hprof
+
+# ================= Python =================
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# ================= ОС =================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ================= Логи и временное =================
+*.log
+*.tmp
+*.bak

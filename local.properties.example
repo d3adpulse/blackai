@@ -1,0 +1,3 @@
+# Скопируйте этот файл как local.properties и укажите путь к вашему Android SDK.
+# Либо задайте переменную окружения ANDROID_HOME.
+sdk.dir=C\:\\Users\\YOUR_USERNAME\\AppData\\Local\\Android\\Sdk
