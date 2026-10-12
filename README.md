@@ -112,16 +112,80 @@ Qwen отлично знает русский язык — отвечает ос
 
 ### Как выбирается движок
 
-1. **llama.cpp** — если в `server\models\` есть `.gguf` (сейчас это Qwen)
-2. **BlackAI-Mini** — собственная нейросеть (см. ниже)
-3. **transformers** — если установлены `torch` + `transformers`
-4. **fallback** — встроенный шаблонный режим, работает всегда
+1. **OpenCode / Space Bunny Free** — если запущен `opencode serve`
+2. **llama.cpp** — если в `server\models\` есть `.gguf` (сейчас это Qwen)
+3. **BlackAI-Mini** — собственная нейросеть (см. ниже)
+4. **transformers** — если установлены `torch` + `transformers`
+5. **fallback** — встроенный шаблонный режим, работает всегда
 
 Подключить другую модель: положите `.gguf` в `server\models\` — сервер подхватит сам. Либо явно:
 
 ```bash
 set BLACKAI_MODEL_PATH=C:\models\другая-модель.gguf
 py server.py
+```
+
+---
+
+## Space Bunny Free (через OpenCode)
+
+В качестве «базы» можно использовать модель **Space Bunny Free** из OpenCode.
+Она бесплатная и заметно сильнее локальной Qwen, но требует работающего OpenCode.
+
+### Как включить
+
+**1. Установите OpenCode** и запустите его сервер в отдельном окне:
+
+```bash
+opencode serve --port 4096
+```
+
+**2. Запустите BlackAI** — `server\start_server.bat` сам обнаружит OpenCode
+и переключится на Space Bunny Free.
+
+В окне сервера будет:
+
+```
+[Space Bunny Free] Server is up - using model opencode/space-bunny-free
+[BlackAI] Движок: OpenCode -> opencode/space-bunny-free (medium)
+```
+
+### Настройки
+
+Переменные окружения:
+
+| Переменная | По умолчанию | Значение |
+|---|---|---|
+| `OPENCODE_URL` | `http://127.0.0.1:4096` | адрес сервера OpenCode |
+| `OPENCODE_PROVIDER` | `opencode` | провайдер модели |
+| `OPENCODE_MODEL_ID` | `space-bunny-free` | идентификатор модели |
+| `OPENCODE_VARIANT` | `medium` | low, medium, high, xhigh, max |
+| `BLACKAI_ENGINE` | авто | `opencode`, `llama`, `mini`, `fallback` |
+| `BLACKAI_USE_OPENCODE` | — | `0` = всегда локальный Qwen |
+
+Например, вариант `high` для более глубоких рассуждений:
+
+```bash
+set OPENCODE_VARIANT=high
+py server.py
+```
+
+### Как это работает
+
+Телефон → BlackAI-сервер (порт 8000) → OpenCode API → модель Space Bunny Free → ответ обратно.
+
+Сервер вызывает эндпоинт `POST /api/experimental/generate`, собирая историю
+диалога в текстовый промпт. Ответ приходит целиком и разбивается на куски
+для плавного потока в приложении.
+
+Если OpenCode не запущен — сервер автоматически переключается на локальный Qwen,
+так что приложение не перестаёт работать.
+
+Проверить интеграцию без OpenCode:
+
+```bash
+cd server
+py test_opencode.py
 ```
 
 ---

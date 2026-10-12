@@ -3,9 +3,11 @@ BlackAI Engine - локальный ИИ-движок для приложени�
 
 Запускается на вашем ПК, телефон подключается по локальной сети.
 Поддерживает:
-  1) llama-cpp-python  (GGUF-модель, быстро, без внешних сервисов)
-  2) HuggingFace       (transformers, если модель в .pt/.safetensors)
-  3) Fallback          (встроенный простой движок, работает всегда)
+  1) OpenCode        (модель Space Bunny Free через opencode serve)
+  2) llama-cpp-python  (GGUF-модель, быстро, без внешних сервисов)
+  3) BlackAI-Mini    (собственная нейросеть на numpy)
+  4) HuggingFace     (transformers)
+  5) Fallback        (встроенный простой движок, работает всегда)
 
 Запуск:
     py server.py
@@ -13,16 +15,29 @@ BlackAI Engine - локальный ИИ-движок для приложени�
     py -m uvicorn server:app --host 0.0.0.0 --port 8000
 """
 
+import json
 import os
 import platform
 import time
 import threading
+import urllib.error
+import urllib.request
 from typing import Any, Dict, Generator, List, Optional
 
 MODEL_NAME = os.environ.get("BLACKAI_MODEL", "blackai-local")
 MODEL_PATH = os.environ.get("BLACKAI_MODEL_PATH", "")  # путь к .gguf, если задать
 CTX_SIZE = int(os.environ.get("BLACKAI_CTX", "4096"))
 N_THREADS = int(os.environ.get("BLACKAI_THREADS", "0")) or None
+
+# --- OpenCode / Space Bunny Free ---
+# Требуется установленный OpenCode с запущенным сервером:
+#     opencode serve --hostname 127.0.0.1 --port 4096
+OPENCODE_URL = os.environ.get("OPENCODE_URL", "http://127.0.0.1:4096")
+OPENCODE_MODEL_ID = os.environ.get("OPENCODE_MODEL_ID", "space-bunny-free")
+OPENCODE_PROVIDER = os.environ.get("OPENCODE_PROVIDER", "opencode")
+OPENCODE_VARIANT = os.environ.get("OPENCODE_VARIANT", "")  # low|medium|high|xhigh|max
+# BLACKAI_ENGINE=opencode|llama|mini|fallback - принудительный выбор
+FORCE_ENGINE = os.environ.get("BLACKAI_ENGINE", "").lower()
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _MODELS_DIR = os.path.join(_HERE, "models")
@@ -62,6 +77,20 @@ _LOADED_MODEL = ""   # реальное имя загруженной модел
 def load_engine() -> None:
     """Пытается поднять реальную модель; при неудаче остаётся fallback."""
     global _ENGINE_NAME, _LLM, _TRANSFORMERS_PIPE, _LOADED_MODEL
+
+    # 0) OpenCode / Space Bunny Free - если доступен локальный сервер
+    if FORCE_ENGINE in ("", "opencode"):
+        if opencode_is_available():
+            _ENGINE_NAME = "opencode"
+            _LOADED_MODEL = (
+                f"{OPENCODE_PROVIDER}/{OPENCODE_MODEL_ID}"
+                + (f" ({OPENCODE_VARIANT})" if OPENCODE_VARIANT else "")
+            )
+            print(f"[BlackAI] Движок: OpenCode -> {_LOADED_MODEL}")
+            return
+        if FORCE_ENGINE == "opencode":
+            print(f"[BlackAI] OpenCode недоступен на {OPENCODE_URL}.")
+            print("           Запустите: opencode serve --port 4096")
 
     model_file = _auto_find_model()
 
@@ -108,8 +137,66 @@ def load_engine() -> None:
     print("[BlackAI] Чтобы подключить настоящую модель, укажите BLACKAI_MODEL_PATH.")
 
 
+def opencode_is_available() -> bool:
+    """Проверяет, отвечает ли локальный сервер OpenCode."""
+    try:
+        req = urllib.request.Request(
+            OPENCODE_URL.rstrip("/") + "/api/info",
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=3) as r:
+            return r.status == 200
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _build_prompt(messages: List[Dict[str, str]]) -> str:
+    """
+    Эндпоинт generate принимает одну строку, поэтому собираем
+    из истории диалога связный текстовый промпт.
+    """
+    parts: List[str] = []
+    for m in messages:
+        role = m.get("role", "user")
+        content = m.get("content", "")
+        if not content:
+            continue
+        if role == "system":
+            parts.append(content)
+        elif role == "assistant":
+            parts.append(f"Ассистент: {content}")
+        else:
+            parts.append(f"Пользователь: {content}")
+    parts.append("Ассистент:")
+    return "\n\n".join(parts)
+
+
+def _opencode_generate(messages: List[Dict[str, str]]) -> str:
+    """Один запрос к OpenCode, возвращает готовый текст ответа."""
+    body: Dict[str, Any] = {"prompt": _build_prompt(messages)}
+    model_ref: Dict[str, str] = {
+        "id": OPENCODE_MODEL_ID,
+        "providerID": OPENCODE_PROVIDER,
+    }
+    if OPENCODE_VARIANT:
+        model_ref["variant"] = OPENCODE_VARIANT
+    body["model"] = model_ref
+
+    req = urllib.request.Request(
+        OPENCODE_URL.rstrip("/") + "/api/experimental/generate",
+        data=json.dumps(body).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=180) as r:
+        data = json.loads(r.read().decode("utf-8"))
+    return (data.get("data") or {}).get("text", "")
+
+
 def load_neural_model() -> bool:
-    """Загружает BlackAI-Mini - нейросеть, обученную на русском корпусе."""
     global _ENGINE_NAME, _NEURAL, _LOADED_MODEL
 
     path = os.path.join(_HERE, "model_mini", "blackai_mini.npz")
@@ -176,6 +263,19 @@ def generate(
     global _ENGINE_NAME
 
     with _LOCK:
+        if _ENGINE_NAME == "opencode":
+            try:
+                text = _opencode_generate(messages)
+                # эндпоинт отдаёт текст целиком - режем на куски для потока
+                for piece in text.split(" "):
+                    yield piece + " "
+                    time.sleep(0.01)
+                return
+            except Exception as exc:  # noqa: BLE001
+                print(f"[BlackAI] Ошибка OpenCode: {exc}")
+                yield from _fallback_reply(messages)
+                return
+
         if _ENGINE_NAME == "blackai-mini" and _NEURAL is not None:
             try:
                 seed = _seed_from_messages(messages)

@@ -1,40 +1,54 @@
 @echo off
 chcp 65001 >nul
-title BlackAI Engine - ИИ-движок на ПК
-echo ==================================================
-echo   BlackAI Engine v1.0 - запуск ИИ-движка
-echo ==================================================
-echo.
-echo  После запуска в приложении BlackAI укажите:
-echo    IP-адрес: %BLACKAI_HOST%
-echo    Порт:     8000
-echo.
+set PYTHONIOENCODING=utf-8
+title BlackAI Engine
+cd /d "%~dp0"
 
-if not exist ".venv\Scripts\python.exe" (
-    echo [1/2] Создаю виртуальное окружение...
-    py -m venv .venv
+REM --- Space Bunny Free via OpenCode ---
+REM Requires OpenCode installed and its server running.
+REM Set to 0 to always use the local Qwen model instead.
+if "%BLACKAI_USE_OPENCODE%"=="0" goto local_mode
+
+where opencode >nul 2>&1
+if errorlevel 1 (
+    echo [Space Bunny Free] OpenCode CLI not found - using local Qwen.
+    goto local_mode
 )
 
-echo [2/2] Устанавливаю зависимости...
-call .venv\Scripts\activate.bat
-python -m pip install -r requirements.txt --quiet
-
-rem Готовый CPU-wheel llama-cpp-python (без долгой компиляции)
-python -m pip install llama-cpp-python --quiet --only-binary=:all: --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
-
-if exist "models\*.gguf" (
-    echo.
-    echo Модель найдена в папке models\ - будет загружена автоматически.
-) else (
-    echo.
-    echo ВНИМАНИЕ: в папке models\ нет .gguf-файла.
-    echo Скачайте модель с https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF
-    echo и положите файл в server\models\
+echo Checking OpenCode server on 127.0.0.1:4096 ...
+curl -s -o nul -w "  HTTP %%{http_code}\n" http://127.0.0.1:4096/api/info 2>nul
+curl -s http://127.0.0.1:4096/api/info >nul 2>&1
+if errorlevel 1 (
+    echo [Space Bunny Free] Server not running.
+    echo   Start it in another window:  opencode serve --port 4096
+    echo   Falling back to local Qwen.
+    goto local_mode
 )
 
-echo.
-echo Запускаю сервер на 0.0.0.0:8000. Не закрывайте это окно!
-echo.
-python server.py
+echo [Space Bunny Free] Server is up - using model opencode/space-bunny-free
+set OPENCODE_URL=http://127.0.0.1:4096
+set OPENCODE_PROVIDER=opencode
+set OPENCODE_MODEL_ID=space-bunny-free
+REM Variants: low, medium, high, xhigh, max
+set OPENCODE_VARIANT=medium
+goto run
 
+:local_mode
+set BLACKAI_ENGINE=llama
+
+:run
+echo ====================================================
+echo   BlackAI Engine v1.0
+echo ====================================================
+echo.
+echo   Keep this window open while using the app.
+echo   To stop the server press Ctrl+C
+echo.
+echo ---------------------------------------------------
+echo.
+
+py server.py
+
+echo.
+echo Server stopped.
 pause
